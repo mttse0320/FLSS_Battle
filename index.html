@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>校園數學 1v1 即時對戰</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- KaTeX 數學公式渲染器 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
+
+  <!-- Firebase Web SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+  <style>
+    body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
+
+  <div class="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl overflow-hidden border border-slate-700 p-6 relative">
+    
+    <!-- 標題區域 -->
+    <header class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-amber-400 tracking-wide">⚔️ 校園數學 1v1 對戰</h1>
+      <p class="text-slate-400 text-xs mt-1">快問快答 · 實時競技</p>
+    </header>
+
+    <!-- 1. 登入畫面 -->
+    <div id="view-login" class="space-y-4">
+      <div class="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
+        <label class="block text-slate-300 text-sm mb-1 font-medium">班級</label>
+        <input type="text" id="input-class" placeholder="例如：1A" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400">
+      </div>
+
+      <div class="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
+        <label class="block text-slate-300 text-sm mb-1 font-medium">學號 / 座號</label>
+        <input type="text" id="input-student-id" placeholder="例如：05" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400">
+      </div>
+
+      <button id="btn-login" onclick="handleLogin()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex justify-center items-center gap-2">
+        <span id="btn-login-text">進入遊戲大廳</span>
+      </button>
+    </div>
+
+    <!-- 2. 遊戲大廳 -->
+    <div id="view-lobby" class="hidden space-y-5">
+      <div class="bg-slate-700/60 p-4 rounded-xl flex justify-between items-center border border-slate-600">
+        <div>
+          <div id="user-display" class="font-bold text-lg text-amber-300">班級: - | 學號: -</div>
+          <div class="text-xs text-slate-400 mt-0.5">總積分：<span id="user-score" class="text-amber-400 font-semibold">0</span> 分</div>
+        </div>
+        <button onclick="switchView('view-login')" class="text-xs bg-slate-600 hover:bg-slate-500 text-slate-300 px-3 py-1.5 rounded-lg">切換帳號</button>
+      </div>
+
+      <div class="space-y-3">
+        <button onclick="startMatchmaking()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-4 rounded-xl text-lg transition-all shadow-lg shadow-emerald-900/30 active:scale-95 flex items-center justify-center gap-2">
+          <span>⚔️ 開始 1v1 即時對戰</span>
+        </button>
+
+        <button onclick="toggleLeaderboard(true)" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-3 rounded-xl transition-all border border-slate-600">
+          🏆 查看校園排行榜
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. 配對等待畫面 -->
+    <div id="view-waiting" class="hidden text-center py-8 space-y-6">
+      <div class="relative w-20 h-20 mx-auto">
+        <div class="absolute inset-0 border-4 border-amber-400/30 rounded-full animate-ping"></div>
+        <div class="absolute inset-0 border-4 border-t-amber-400 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin"></div>
+      </div>
+      <div>
+        <h3 class="text-xl font-bold text-slate-200">正在尋找對手...</h3>
+        <p class="text-slate-400 text-sm mt-1">請在另一個分頁或裝置開啟頁面配對測試</p>
+      </div>
+      <button onclick="cancelMatchmaking()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-6 py-2 rounded-lg text-sm border border-slate-600">
+        取消配對
+      </button>
+    </div>
+
+    <!-- 4. 對戰畫面 -->
+    <div id="view-battle" class="hidden space-y-4">
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="bg-blue-900/40 border border-blue-500/30 p-2.5 rounded-xl">
+          <div id="my-name" class="text-xs text-blue-300 font-medium">我方</div>
+          <div id="my-score" class="text-2xl font-black text-blue-400">0</div>
+        </div>
+        <div class="bg-rose-900/40 border border-rose-500/30 p-2.5 rounded-xl">
+          <div id="opp-name" class="text-xs text-rose-300 font-medium">對手</div>
+          <div id="opp-score" class="text-2xl font-black text-rose-400">0</div>
+        </div>
+      </div>
+
+      <div class="bg-slate-700/80 p-5 rounded-xl border border-slate-600 min-h-[140px] flex flex-col justify-between">
+        <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+          <span>第 <span id="current-q-num">1</span> / <span id="total-q-num">3</span> 題</span>
+          <span class="text-amber-400 font-bold">倒數 <span id="timer">10</span>s</span>
+        </div>
+        <div id="question-text" class="text-lg font-medium text-center py-2">
+          載入題目中...
+        </div>
+      </div>
+
+      <div id="options-container" class="grid grid-cols-2 gap-3">
+        <!-- 選項按鈕 -->
+      </div>
+    </div>
+
+    <!-- 5. 結算畫面 -->
+    <div id="view-result" class="hidden text-center py-6 space-y-5">
+      <div id="result-icon" class="text-5xl">🏆</div>
+      <div>
+        <h2 id="result-title" class="text-3xl font-black text-amber-400">對戰結束</h2>
+        <p id="result-desc" class="text-slate-300 text-sm mt-1">最終得分：0 vs 0</p>
+        <p id="upload-status" class="text-xs text-amber-400 mt-2 font-medium">戰績同步至 Google Sheets 中...</p>
+      </div>
+      <button onclick="switchView('view-lobby')" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-8 py-3 rounded-xl shadow-lg">
+        返回大廳
+      </button>
+    </div>
+
+    <!-- 6. 排行榜彈窗 -->
+    <div id="modal-leaderboard" class="hidden absolute inset-0 bg-slate-900/95 p-6 flex flex-col z-20">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold text-amber-400">🏆 校園英雄榜</h2>
+        <button onclick="toggleLeaderboard(false)" class="text-slate-400 hover:text-white text-xl">✕</button>
+      </div>
+      <div id="leaderboard-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+        <div class="text-center text-slate-400 text-sm py-4">載入中...</div>
+      </div>
+      <button onclick="toggleLeaderboard(false)" class="mt-4 w-full bg-slate-700 hover:bg-slate-600 text-slate-200 py-2 rounded-xl text-sm">
+        關閉
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    // 1. GAS API 網址
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbw8tW9n6MncNk58b4q2OBCyQEHEGlxidHpAkqyJPLxMrBdBTAHEJVMrAh-3xE-mDrJbng/exec";
+
+    // 2. Firebase 配置
+    const firebaseConfig = {
+      apiKey: "AIzaSyDl0ddhwxNSxd67s3qDXzE6E6nYs2A4HUo",
+      authDomain: "flss-battle.firebaseapp.com",
+      databaseURL: "https://flss-battle-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "flss-battle",
+      storageBucket: "flss-battle.firebasestorage.app",
+      messagingSenderId: "406952617824",
+      appId: "1:406952617824:web:017adc649a3c9743032005"
+    };
+
+    // 初始化 Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // 全域變數
+    let currentUser = null;
+    let currentRoomId = null;
+    let myRole = null;
+    let roomRef = null;
+    let timerInterval = null;
+    let currentQIndex = 0;
+    let gameQuestions = [];
+
+    // 畫面切換
+    function switchView(viewId) {
+      const views = ['view-login', 'view-lobby', 'view-waiting', 'view-battle', 'view-result'];
+      views.forEach(id => document.getElementById(id).classList.add('hidden'));
+      document.getElementById(viewId).classList.remove('hidden');
+
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body);
+      }
+    }
+
+    // 1. 處理學生登入 / 自動註冊 (GAS API)
+    async function handleLogin() {
+      const className = document.getElementById('input-class').value.trim();
+      const studentId = document.getElementById('input-student-id').value.trim();
+
+      if (!className || !studentId) {
+        alert('請輸入班級與學號！');
+        return;
+      }
+
+      document.getElementById('btn-login-text').innerText = '登入處理中...';
+
+      try {
+        const response = await fetch(GAS_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'loginOrRegister',
+            class_name: className,
+            student_id: studentId
+          })
+        });
+        const result = await response.json();
+
+        if (result.status === 'success') {
+          currentUser = {
+            id: `${className}_${studentId}`,
+            className: className,
+            studentId: studentId,
+            displayName: `${className} (${studentId})`,
+            totalScore: result.player.total_score || 0
+          };
+
+          document.getElementById('user-display').innerText = currentUser.displayName;
+          document.getElementById('user-score').innerText = currentUser.totalScore;
+          switchView('view-lobby');
+        } else {
+          alert('登入失敗：' + result.message);
+        }
+      } catch (err) {
+        alert('連線至 GAS API 失敗，請確認網路連線或 API URL！');
+        console.error(err);
+      } finally {
+        document.getElementById('btn-login-text').innerText = '進入遊戲大廳';
+      }
+    }
+
+    // 2. 從 GAS API 撈取真題庫
+    async function fetchQuestionsFromGAS() {
+      try {
+        const res = await fetch(`${GAS_API_URL}?action=getQuestions`);
+        const data = await res.json();
+
+        if (data.status === 'success' && data.data && data.data.length > 0) {
+          gameQuestions = data.data.map(q => {
+            const options = [q.optionA, q.optionB, q.optionC, q.optionD];
+            const ansLetter = String(q.answer).trim().toUpperCase();
+            const ansIndex = ['A', 'B', 'C', 'D'].indexOf(ansLetter);
+            return {
+              id: q.id,
+              q: q.question,
+              options: options,
+              ans: ansIndex >= 0 ? ansIndex : 0
+            };
+          });
+        } else {
+          fallbackMockQuestions();
+        }
+      } catch (err) {
+        console.warn('無法連線至 GAS 題庫，使用預設題目');
+        fallbackMockQuestions();
+      }
+    }
+
+    function fallbackMockQuestions() {
+      gameQuestions = [
+        { q: "求方程 $x^2 - 5x + 6 = 0$ 的解？", options: ["$x=2$ 或 $3$", "$x=-2$ 或 $-3$", "$x=1$ 或 $6$", "$x=-1$ 或 $-6$"], ans: 0 },
+        { q: "計算 $\\frac{3}{4} + \\frac{1}{2} = ?$", options: ["$\\frac{5}{4}$", "$\\frac{4}{6}$", "$\\frac{1}{2}$", "$\\frac{3}{8}$"], ans: 0 }
+      ];
+    }
+
+    // 3. 開始 1v1 配對
+    async function startMatchmaking() {
+      switchView('view-waiting');
+      await fetchQuestionsFromGAS();
+
+      const waitingRef = db.ref('waiting_player');
+      waitingRef.once('value').then(snapshot => {
+        const waiter = snapshot.val();
+
+        if (waiter && waiter.id !== currentUser.id) {
+          currentRoomId = 'room_' + Date.now();
+          myRole = 'p2';
+
+          const roomData = {
+            roomId: currentRoomId,
+            p1: waiter,
+            p2: currentUser,
+            p1Score: 0,
+            p2Score: 0,
+            status: 'playing',
+            currentQ: 0
+          };
+
+          waitingRef.remove();
+          db.ref('rooms/' + currentRoomId).set(roomData).then(() => {
+            enterBattleRoom(currentRoomId);
+          });
+
+        } else {
+          myRole = 'p1';
+          waitingRef.set(currentUser);
+
+          const roomsRef = db.ref('rooms');
+          roomsRef.on('child_added', (snap) => {
+            const room = snap.val();
+            if (room && room.p1 && room.p1.id === currentUser.id && room.status === 'playing') {
+              roomsRef.off('child_added');
+              currentRoomId = room.roomId;
+              enterBattleRoom(currentRoomId);
+            }
+          });
+        }
+      });
+    }
+
+    // 取消配對
+    function cancelMatchmaking() {
+      if (myRole === 'p1') {
+        db.ref('waiting_player').remove();
+      }
+      switchView('view-lobby');
+    }
+
+    // 進入對戰房間
+    function enterBattleRoom(roomId) {
+      switchView('view-battle');
+      roomRef = db.ref('rooms/' + roomId);
+
+      roomRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+
+        if (myRole === 'p1') {
+          document.getElementById('my-name').innerText = `我: ${data.p1.displayName}`;
+          document.getElementById('opp-name').innerText = `對手: ${data.p2.displayName}`;
+          document.getElementById('my-score').innerText = data.p1Score;
+          document.getElementById('opp-score').innerText = data.p2Score;
+        } else {
+          document.getElementById('my-name').innerText = `我: ${data.p2.displayName}`;
+          document.getElementById('opp-name').innerText = `對手: ${data.p1.displayName}`;
+          document.getElementById('my-score').innerText = data.p2Score;
+          document.getElementById('opp-score').innerText = data.p1Score;
+        }
+
+        currentQIndex = data.currentQ || 0;
+        if (currentQIndex < gameQuestions.length) {
+          loadQuestion(currentQIndex);
+        } else {
+          endBattle(data);
+        }
+      });
+
+      startTimer();
+    }
+
+    // 載入題目
+    function loadQuestion(index) {
+      const qData = gameQuestions[index];
+      document.getElementById('current-q-num').innerText = index + 1;
+      document.getElementById('total-q-num').innerText = gameQuestions.length;
+      document.getElementById('question-text').innerHTML = qData.q;
+
+      const container = document.getElementById('options-container');
+      container.innerHTML = '';
+
+      qData.options.forEach((optText, optIdx) => {
+        const btn = document.createElement('button');
+        btn.className = "bg-slate-700 hover:bg-amber-600 p-3 rounded-xl border border-slate-600 transition-all font-medium text-center";
+        btn.innerHTML = optText;
+        btn.onclick = () => submitAnswer(optIdx);
+        container.appendChild(btn);
+      });
+
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body);
+      }
+    }
+
+    // 作答並即時同步至 Firebase
+    function submitAnswer(optIdx) {
+      const qData = gameQuestions[currentQIndex];
+      const isCorrect = (optIdx === qData.ans);
+      const scoreAdd = isCorrect ? 10 : 0;
+
+      const btns = document.querySelectorAll('#options-container button');
+      btns.forEach(b => b.disabled = true);
+
+      roomRef.once('value').then(snapshot => {
+        const data = snapshot.val();
+        let newMyScore = (myRole === 'p1' ? data.p1Score : data.p2Score) + scoreAdd;
+
+        let updates = {};
+        if (myRole === 'p1') {
+          updates['p1Score'] = newMyScore;
+        } else {
+          updates['p2Score'] = newMyScore;
+        }
+
+        if (myRole === 'p1') {
+          updates['currentQ'] = currentQIndex + 1;
+        }
+
+        roomRef.update(updates);
+      });
+    }
+
+    // 倒數計時
+    function startTimer() {
+      let timeLeft = 10;
+      document.getElementById('timer').innerText = timeLeft;
+      clearInterval(timerInterval);
+
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        document.getElementById('timer').innerText = timeLeft;
+        if (timeLeft <= 0) {
+          if (myRole === 'p1') {
+            roomRef.update({ currentQ: currentQIndex + 1 });
+          }
+          timeLeft = 10;
+        }
+      }, 1000);
+    }
+
+    // 結束對戰並更新數據至 Google Sheets
+    async function endBattle(roomData) {
+      clearInterval(timerInterval);
+      if (roomRef) roomRef.off();
+
+      const myScore = myRole === 'p1' ? roomData.p1Score : roomData.p2Score;
+      const oppScore = myRole === 'p1' ? roomData.p2Score : roomData.p1Score;
+
+      let title = "平手！";
+      let icon = "🤝";
+      let isWin = false;
+
+      if (myScore > oppScore) {
+        title = "獲得勝利！";
+        icon = "🏆";
+        isWin = true;
+      } else if (myScore < oppScore) {
+        title = "戰敗！";
+        icon = "💀";
+      }
+
+      document.getElementById('result-icon').innerText = icon;
+      document.getElementById('result-title').innerText = title;
+      document.getElementById('result-desc').innerText = `最終得分：${myScore} 分 vs ${oppScore} 分`;
+
+      switchView('view-result');
+
+      // 上傳分數至 Google Sheets (GAS API)
+      try {
+        const res = await fetch(GAS_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'updateScore',
+            student_id: currentUser.studentId,
+            class_name: currentUser.className,
+            score_add: myScore,
+            is_win: isWin
+          })
+        });
+        const updateRes = await res.json();
+        if (updateRes.status === 'success') {
+          document.getElementById('upload-status').innerText = `✅ 戰績已同步！最新總積分：${updateRes.player.total_score} 分`;
+          document.getElementById('user-score').innerText = updateRes.player.total_score;
+        }
+      } catch (err) {
+        document.getElementById('upload-status').innerText = '❌ 戰績同步失敗';
+        console.error(err);
+      }
+    }
+
+    // 4. 讀取並顯示 Google Sheets 排行榜
+    async function toggleLeaderboard(show) {
+      const modal = document.getElementById('modal-leaderboard');
+      modal.classList.toggle('hidden', !show);
+
+      if (show) {
+        const listContainer = document.getElementById('leaderboard-list');
+        listContainer.innerHTML = '<div class="text-center text-slate-400 text-sm py-4">載入排行榜中...</div>';
+
+        try {
+          const res = await fetch(`${GAS_API_URL}?action=getLeaderboard`);
+          const data = await res.json();
+
+          if (data.status === 'success' && data.data && data.data.length > 0) {
+            listContainer.innerHTML = '';
+            data.data.forEach(item => {
+              const div = document.createElement('div');
+              div.className = "bg-slate-800 p-3 rounded-lg flex justify-between text-sm border border-slate-700";
+              div.innerHTML = `
+                <span>第 ${item.rank} 名 · ${item.class_name} (座號 ${item.student_id})</span>
+                <span class="text-amber-400 font-bold">${item.total_score} 分</span>
+              `;
+              listContainer.appendChild(div);
+            });
+          } else {
+            listContainer.innerHTML = '<div class="text-center text-slate-400 text-sm py-4">目前尚無戰績紀錄</div>';
+          }
+        } catch (err) {
+          listContainer.innerHTML = '<div class="text-center text-rose-400 text-sm py-4">排行榜載入失敗</div>';
+        }
+      }
+    }
+  </script>
+</body>
+</html>
